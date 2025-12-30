@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
 
 # =====================
 # Load Data
@@ -8,55 +9,43 @@ import matplotlib.pyplot as plt
 df = pd.read_excel("trades_database.xlsx")
 
 # =====================
-# Pre-computed Metrics
+# Compute Metrics
 # =====================
 df["Running_Max"] = df["Balance_After"].cummax()
 df["Drawdown"] = df["Balance_After"] - df["Running_Max"]
-
 df["Cumulative_Wins"] = (df["Result"] == "WIN").cumsum()
 df["Running_Winrate"] = df["Cumulative_Wins"] / (df.index + 1) * 100
 
 # =====================
-# Page Configuration
+# Page Config & Styling
 # =====================
-st.set_page_config(
-    page_title="Trading Dashboard",
-    layout="wide"
-)
+st.set_page_config(page_title="Trading Dashboard", layout="wide")
 
-# Dark background styling
 st.markdown(
     """
     <style>
-    .stApp {
-        background-color: #0e1117;
-        color: white;
-    }
+    .stApp { background-color: #0e1117; color: white; }
+    .stSidebar { background-color: #11151f; }
+    .stMarkdown, .stText, .stSubheader { color: white; }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-st.title("Trading Performance Dashboard")
+st.title("Trading Dashboard")
 
 # =====================
 # Sidebar Filters
 # =====================
 st.sidebar.header("Filters")
-
 selected_markets = st.sidebar.multiselect(
     "Select Markets",
     options=df["Market"].unique(),
     default=df["Market"].unique()
 )
-
-result_filter = st.sidebar.selectbox(
-    "Trade Result",
-    ["All", "WIN", "LOSS"]
-)
+result_filter = st.sidebar.selectbox("Trade Result", ["All", "WIN", "LOSS"])
 
 filtered_df = df[df["Market"].isin(selected_markets)]
-
 if result_filter != "All":
     filtered_df = filtered_df[filtered_df["Result"] == result_filter]
 
@@ -64,7 +53,6 @@ if result_filter != "All":
 # Key Metrics
 # =====================
 st.subheader("Key Metrics")
-
 col1, col2, col3, col4, col5 = st.columns(5)
 
 col1.metric("Total Trades", len(filtered_df))
@@ -76,80 +64,89 @@ col5.metric("Max Drawdown", round(filtered_df["Drawdown"].min(), 2))
 st.markdown("---")
 
 # =====================
-# Plot Settings
-# =====================
-plt.style.use("dark_background")
-
-# =====================
 # Equity Curve
 # =====================
 st.subheader("Equity Curve")
-
-fig, ax = plt.subplots()
-ax.plot(filtered_df["Balance_After"], color="cyan")
-ax.set_xlabel("Trade Number")
-ax.set_ylabel("Account Balance")
-st.pyplot(fig)
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    y=filtered_df["Balance_After"],
+    mode="lines+markers",
+    name="Equity",
+    line=dict(color="cyan")
+))
+fig.update_layout(
+    template="plotly_dark",
+    xaxis_title="Trade Number",
+    yaxis_title="Account Balance ($)"
+)
+st.plotly_chart(fig, width='stretch')
 
 # =====================
 # Running Winrate
 # =====================
-st.subheader("Running Winrate")
-
-fig, ax = plt.subplots()
-ax.plot(filtered_df["Running_Winrate"], color="gold")
-ax.set_xlabel("Trade Number")
-ax.set_ylabel("Winrate (%)")
-ax.set_ylim(0, 100)
-st.pyplot(fig)
-
-# =====================
-# Trades Per Market
-# =====================
-st.subheader("Trades Per Market")
-
-fig, ax = plt.subplots()
-filtered_df["Market"].value_counts().plot(
-    kind="bar",
-    color="gray",
-    ax=ax
+st.subheader("Running Winrate (%)")
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    y=filtered_df["Running_Winrate"],
+    mode="lines+markers",
+    name="Winrate",
+    line=dict(color="gold")
+))
+fig.update_layout(
+    template="plotly_dark",
+    xaxis_title="Trade Number",
+    yaxis_title="Winrate (%)",
+    yaxis=dict(range=[0, 100])
 )
-ax.set_ylabel("Number of Trades")
-st.pyplot(fig)
+st.plotly_chart(fig, width='stretch')
 
 # =====================
-# Winrate Per Market
+# Trades per Market
 # =====================
-st.subheader("Winrate Per Market")
+st.subheader("Trades per Market")
+trade_counts = filtered_df["Market"].value_counts().reset_index()
+trade_counts.columns = ["Market", "Trades"]
 
-winrate_per_market = (
-    filtered_df.groupby("Market")["Result"]
-    .apply(lambda x: (x == "WIN").mean() * 100)
+fig = px.bar(
+    trade_counts,
+    x="Market",
+    y="Trades",
+    color="Market",
+    color_discrete_sequence=px.colors.sequential.Greys,
+    template="plotly_dark"
 )
-
-fig, ax = plt.subplots()
-winrate_per_market.plot(
-    kind="bar",
-    color="lightgray",
-    ax=ax
-)
-ax.set_ylabel("Winrate (%)")
-ax.set_ylim(0, 100)
-st.pyplot(fig)
+st.plotly_chart(fig, width='stretch')
 
 # =====================
-# Market Distribution (Minimal Colors)
+# Winrate per Market
+# =====================
+st.subheader("Winrate per Market (%)")
+winrate_per_market = filtered_df.groupby("Market")["Result"].apply(lambda x: (x=="WIN").mean()*100).reset_index()
+winrate_per_market.columns = ["Market", "Winrate"]
+
+fig = px.bar(
+    winrate_per_market,
+    x="Market",
+    y="Winrate",
+    color="Market",
+    color_discrete_sequence=px.colors.sequential.Greys,
+    template="plotly_dark",
+    range_y=[0,100]
+)
+st.plotly_chart(fig, width='stretch')
+
+# =====================
+# Market Distribution
 # =====================
 st.subheader("Market Distribution")
+market_counts = filtered_df["Market"].value_counts().reset_index()
+market_counts.columns = ["Market", "Trades"]
 
-minimal_colors = ["#2c2c2c", "#4a4a4a", "#6a6a6a", "#8a8a8a"]
-
-fig, ax = plt.subplots()
-filtered_df["Market"].value_counts().plot(
-    kind="pie",
-    autopct="%1.1f%%",
-    colors=minimal_colors,
-    ylabel="",
-    ax=ax
+fig = px.pie(
+    market_counts,
+    names="Market",
+    values="Trades",
+    color_discrete_sequence=px.colors.sequential.Greys,
+    template="plotly_dark"
 )
-st.pyplot(fig)
+st.plotly_chart(fig, width='stretch')
